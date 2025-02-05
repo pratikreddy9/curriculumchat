@@ -4,30 +4,44 @@ from pymongo import MongoClient
 import requests
 import json
 import numpy as np
-from urllib.parse import quote_plus
 
 # Load OpenAI API key from Streamlit secrets
 OPENAI_API_KEY = st.secrets["openai"]["api_key"]
 
 # MongoDB Connection Details (Hardcoded)
+MONGO_HOST = "notify.pesuacademy.com"
+MONGO_PORT = 27017
 MONGO_USERNAME = "admin"
 MONGO_PASSWORD = "Ayotta@123"
-MONGO_HOST = "notify.pesuacademy.com"
-MONGO_PORT = "27017"
-MONGO_DB = "knowledge_database"
-MONGO_COLLECTION = "curriculum_data"
+MONGO_AUTH_DB = "admin"
+MONGO_DB_NAME = "knowledge_database"
+MONGO_COLLECTION_NAME = "curriculum_data"
 
-# MongoDB Connection URI
-mongo_uri = f"mongodb://{quote_plus(MONGO_USERNAME)}:{quote_plus(MONGO_PASSWORD)}@{MONGO_HOST}:{MONGO_PORT}/{MONGO_DB}"
-client = MongoClient(mongo_uri)
-db = client[MONGO_DB]
-collection = db[MONGO_COLLECTION]
+# Establish MongoDB Connection
+try:
+    client = MongoClient(
+        host=MONGO_HOST,
+        port=MONGO_PORT,
+        username=MONGO_USERNAME,
+        password=MONGO_PASSWORD,
+        authSource=MONGO_AUTH_DB  # Always authenticate against "admin"
+    )
+    
+    # Access database and collection
+    db = client[MONGO_DB_NAME]
+    collection = db[MONGO_COLLECTION_NAME]
+    
+    print("✅ Connected successfully to MongoDB!")
+except Exception as e:
+    st.error(f"❌ MongoDB connection failed: {e}")
+    st.stop()  # Prevent further execution if DB fails
 
 # Function to create OpenAI embeddings
 def create_embedding(text):
     """Generate embeddings using OpenAI API."""
     data = {"input": text, "model": "text-embedding-3-large"}
     headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
+
     response = requests.post("https://api.openai.com/v1/embeddings", headers=headers, json=data)
 
     if response.status_code == 200:
