@@ -140,4 +140,4 @@ if st.button("Send"):
         st.write(context)
 
         # Refresh UI
-        st.experimental_rerun()
+        st.rerun()
