@@ -63,12 +63,16 @@ def retrieve_context(user_query):
     
     # Fetch all stored text chunks from MongoDB
     for doc in collection.find({}):
+        doc_title = doc.get("document_title", "Unknown Document")  # Add document title if available
+        doc_source = doc.get("source", "Unknown Source")  # Can be filename, ID, etc.
+
         for chunk in doc["text_chunks"]:
             chunk_embedding = np.array(chunk["embedding"])
             
             # Compute cosine similarity
             similarity = np.dot(query_embedding, chunk_embedding) / (np.linalg.norm(query_embedding) * np.linalg.norm(chunk_embedding))
-            results.append((similarity, chunk["text"], doc["page_number"], chunk["chunk_number"]))
+            
+            results.append((similarity, chunk["text"], doc_title, doc_source, doc["page_number"], chunk["chunk_number"]))
 
     # Sort by highest similarity
     results = sorted(results, key=lambda x: x[0], reverse=True)[:3]  # Top 3 most relevant chunks
@@ -78,14 +82,25 @@ def retrieve_context(user_query):
 
     # Format retrieved chunks
     context_text = ""
-    for sim, text, page, chunk_num in results:
-        context_text += f"🔹 **Page {page}, Chunk {chunk_num} (Similarity: {sim:.2f})**\n{text}\n\n"
+    for sim, text, doc_title, doc_source, page, chunk_num in results:
+        context_text += f"""🔹 **{doc_title}** (📄 Source: {doc_source})  
+        **Page {page}, Chunk {chunk_num}** (🔍 Similarity: {sim:.2f})  
+        _{text}_  
+        \n\n"""
 
     return context_text
 
 # Function to generate chatbot response using OpenAI API
-def get_openai_response(user_query, context):
-    """Generates chatbot response using OpenAI API."""
+def get_openai_response(user_query):
+    """Generates chatbot response using OpenAI API, including retrieved context."""
+    
+    # Retrieve relevant curriculum data
+    context = retrieve_context(user_query)
+
+    if "❌" in context or "No relevant data" in context:
+        return "❌ No relevant context found for this query."
+
+    # Construct a message with both retrieved context and user query
     messages = [
         {"role": "system", "content": "You are a curriculum chatbot. Use the given context to provide helpful responses."},
         {"role": "user", "content": f"Context:\n{context}\n\nUser Query: {user_query}"}
@@ -97,7 +112,16 @@ def get_openai_response(user_query, context):
     response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=data)
 
     if response.status_code == 200:
-        return response.json()["choices"][0]["message"]["content"]
+        ai_response = response.json()["choices"][0]["message"]["content"]
+
+        # Append retrieved chunks inside the chat response
+        full_response = f"""{ai_response}
+
+---
+🔍 **Retrieved Sources:**
+{context}
+"""
+        return full_response
     else:
         return "❌ OpenAI API error."
 
@@ -126,18 +150,11 @@ if st.button("Send"):
         # Append user message to chat history
         st.session_state.chat_history.append({"role": "user", "content": user_query})
 
-        # Retrieve relevant curriculum data
-        context = retrieve_context(user_query)
-
         # Get chatbot response
-        chatbot_response = get_openai_response(user_query, context)
+        chatbot_response = get_openai_response(user_query)
 
         # Append chatbot response to chat history
         st.session_state.chat_history.append({"role": "assistant", "content": chatbot_response})
-
-        # Show retrieved chunks
-        st.write("### 🔎 Retrieved Chunks Used for Response")
-        st.write(context)
 
         # Refresh UI
         st.rerun()
